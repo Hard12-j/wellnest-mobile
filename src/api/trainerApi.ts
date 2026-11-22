@@ -60,10 +60,10 @@ export const getTrainerById = async (trainerId: number): Promise<TrainerProfile>
   return request<TrainerProfile>(`/api/trainers/${trainerId}`, { method: 'GET' });
 };
 
-export const sendTrainerRequest = async (trainerId: number): Promise<TrainerRequest> => {
+export const sendTrainerRequest = async (trainerId: number, userGoal?: string): Promise<TrainerRequest> => {
   return request<TrainerRequest>('/api/trainers/requests', {
     method: 'POST',
-    body: JSON.stringify({ trainerId: Number(trainerId) }),
+    body: JSON.stringify({ trainerId: Number(trainerId), userGoal: userGoal || null }),
   });
 };
 

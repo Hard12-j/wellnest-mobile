@@ -15,6 +15,7 @@ import { Header } from '../../src/components/Header';
 import { COLORS } from '../../src/constants/theme';
 import * as trackerApi from '../../src/api/trackerApi';
 import * as profileApi from '../../src/api/profileApi';
+import * as trainerApi from '../../src/api/trainerApi';
 import { extractErrorMessage } from '../../src/api/client';
 import {
   syncHealthConnect,
@@ -32,6 +33,7 @@ export default function DashboardScreen() {
 
   const [dailyLog, setDailyLog] = useState<trackerApi.DailyLog | null>(null);
   const [bmiData, setBmiData] = useState<profileApi.BmiResponse | null>(null);
+  const [myPlans, setMyPlans] = useState<trainerApi.TrainerPlan[]>([]);
 
   // Steps state
   const [stepsToday, setStepsToday] = useState<number>(0);
@@ -62,9 +64,10 @@ export default function DashboardScreen() {
       const today = new Date().toISOString().split('T')[0];
 
       // Use allSettled to prevent single-endpoint failure / 429 from breaking entire dashboard
-      const [logRes, bmiRes] = await Promise.allSettled([
+      const [logRes, bmiRes, planRes] = await Promise.allSettled([
         trackerApi.getDailyLog(today),
         profileApi.getBmi(),
+        trainerApi.getMyPlans(),
       ]);
 
       if (logRes.status === 'fulfilled') {
@@ -77,6 +80,10 @@ export default function DashboardScreen() {
 
       if (bmiRes.status === 'fulfilled') {
         setBmiData(bmiRes.value);
+      }
+
+      if (planRes.status === 'fulfilled') {
+        setMyPlans(planRes.value || []);
       }
 
       // On Android, also check direct live steps from Health Connect
@@ -148,17 +155,6 @@ export default function DashboardScreen() {
       <Header
         title={`Hello, ${user?.first || 'Friend'} 👋`}
         subtitle={todayStr}
-        rightAction={
-          // Avatar → standalone /profile page (not a tab)
-          <TouchableOpacity
-            style={styles.avatarPill}
-            onPress={() => router.push('/profile')}
-          >
-            <Text style={styles.avatarText}>
-              {(user?.first?.[0] || 'U').toUpperCase()}
-            </Text>
-          </TouchableOpacity>
-        }
       />
 
       <ScrollView
@@ -322,6 +318,29 @@ export default function DashboardScreen() {
                 </View>
               ) : null}
             </View>
+
+            {/* ── Coach Assigned Plan Spotlight (if present) ── */}
+            {myPlans.length > 0 ? (
+              <TouchableOpacity
+                style={styles.planBanner}
+                onPress={() => router.push('/(tabs)/trainers')}
+                activeOpacity={0.85}
+              >
+                <View style={styles.planBannerTop}>
+                  <View style={styles.planBadge}>
+                    <Text style={styles.planBadgeText}>COACH ASSIGNED PLAN</Text>
+                  </View>
+                  <Text style={styles.planTrainerId}>Coach #{myPlans[0].trainerId}</Text>
+                </View>
+                <Text style={styles.planBannerTitle}>{myPlans[0].title}</Text>
+                <Text style={styles.planBannerDetails} numberOfLines={2}>
+                  {myPlans[0].details}
+                </Text>
+                <Text style={styles.planBannerLink}>
+                  View full routine & instructions ({myPlans.length} {myPlans.length === 1 ? 'plan' : 'plans'}) →
+                </Text>
+              </TouchableOpacity>
+            ) : null}
 
             {/* ── Secondary Metrics (Hydration & Sleep) ── */}
             <View style={styles.metricsRow}>
@@ -677,6 +696,61 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     lineHeight: 18,
+  },
+
+  // ── Plan Banner Styles ──
+  planBanner: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#bbf7d0',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  planBannerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  planBadge: {
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  planBadgeText: {
+    color: '#15803d',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  planTrainerId: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
+  },
+  planBannerTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  planBannerDetails: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  planBannerLink: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
 
   // ── Metrics Row ──
