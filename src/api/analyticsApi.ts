@@ -1,39 +1,50 @@
 import { request } from './client';
 
-export interface WeeklyTrendDay {
-  date: string;
-  caloriesBurned: number;
+export interface DayPoint {
+  date: string; // yyyy-MM-dd
   caloriesConsumed: number;
+  caloriesBurned: number;
+  netCalories: number;
+  workoutCount: number;
+  workoutMinutes: number;
   waterMl: number;
   sleepHours: number;
+  logged: boolean;
 }
 
 export interface WeeklyTrendsResponse {
   from: string;
   to: string;
-  days: WeeklyTrendDay[];
-  totalWorkouts: number;
-  avgCaloriesBurned: number;
-  avgSleep: number;
-  avgWaterMl: number;
+  days: DayPoint[];
+}
+
+export interface BalanceDay {
+  date: string;
+  consumed: number;
+  burned: number;
+  net: number;
 }
 
 export interface CaloriesBalanceResponse {
   from: string;
   to: string;
-  totalBurned: number;
+  days: BalanceDay[];
   totalConsumed: number;
-  netCalories: number;
-  targetDailyDeficit?: number;
+  totalBurned: number;
+  totalNet: number;
 }
 
 export interface GoalProgressResponse {
-  streakDays: number;
+  status: string; // NO_PROFILE | NO_TARGET | IN_PROGRESS | ACHIEVED
+  fitnessGoal?: string;
+  startWeightKg?: number;
   currentWeightKg?: number;
   targetWeightKg?: number;
-  weightDeltaKg?: number;
-  weeklyWorkoutsTarget?: number;
-  weeklyWorkoutsDone?: number;
+  changedKg?: number;
+  remainingKg?: number;
+  progressPercent?: number;
+  currentStreakDays: number;
+  daysLoggedLast7: number;
 }
 
 export interface InsightItem {
@@ -47,16 +58,43 @@ export interface InsightsResponse {
   insights: InsightItem[];
 }
 
-export interface GoalCardItem {
-  type: string; // WORKOUT, WATER, SLEEP
-  target: number;
-  achieved: number;
-  unit: string;
-  assignedBy?: string;
+export interface WorkoutsGoalCard {
+  badge: string;
+  subtitle: string;
+  completedDays: number;
+  targetDays: number;
+  percentage: number;
+  moreToGo: number;
+  daysLeft: number;
+  tip: string;
+}
+
+export interface WaterGoalCard {
+  badge: string;
+  subtitle: string;
+  currentLitres: number;
+  targetLitres: number;
+  percentage: number;
+  remainingLitres: number;
+  streakDays: number;
+  tip: string;
+}
+
+export interface SleepGoalCard {
+  badge: string;
+  subtitle: string;
+  avgHours: number;
+  targetHours: number;
+  percentage: number;
+  comparisonText: string;
+  bestHours: number;
+  tip: string;
 }
 
 export interface GoalCardProgressResponse {
-  cards: GoalCardItem[];
+  workouts?: WorkoutsGoalCard;
+  water?: WaterGoalCard;
+  sleep?: SleepGoalCard;
 }
 
 export const getWeeklyTrends = async (from?: string, to?: string): Promise<WeeklyTrendsResponse> => {
@@ -90,4 +128,3 @@ export const getGoalCards = async (): Promise<GoalCardProgressResponse> => {
     method: 'GET',
   });
 };
-
