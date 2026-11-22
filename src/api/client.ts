@@ -81,16 +81,16 @@ export const extractErrorMessage = (error: any): string => {
   if (!error) return 'An unexpected error occurred.';
   if (typeof error === 'string') return error;
 
+  // Check 429 specifically FIRST (before raw error.message)
+  if (error.status === 429 || (error.message && error.message.includes('429'))) {
+    return 'Render free-tier rate limit active. Cloudflare is cooling down — please wait 1 minute before retrying.';
+  }
+
   if (error.data?.message) {
     return error.data.message;
   }
-  if (error.message) {
-    if (error.message.includes('Network request failed') || error.message.includes('fetch')) {
-      return 'Server is starting up (Render cold-start). Please wait a moment and try again.';
-    }
-    return error.message;
-  }
 
+  // Handle known HTTP status codes before generic error.message
   switch (error.status) {
     case 400:
       return error.data?.message || error.data?.error || 'Invalid request. Please check your input.';
@@ -102,16 +102,21 @@ export const extractErrorMessage = (error: any): string => {
       return 'Resource not found.';
     case 409:
       return error.data?.message || 'A conflict occurred. The entry may already exist.';
-    case 429:
-      return 'Too many requests. Please wait a moment and try again.';
     case 500:
     case 502:
     case 503:
     case 504:
       return 'Backend service is starting up on Render. Please retry in a few seconds.';
-    default:
-      return 'An unexpected error occurred.';
   }
+
+  if (error.message) {
+    if (error.message.includes('Network request failed') || error.message.includes('fetch')) {
+      return 'Server is starting up (Render cold-start). Please wait a moment and try again.';
+    }
+    return error.message;
+  }
+
+  return 'An unexpected error occurred.';
 };
 
 interface RequestOptions extends RequestInit {
@@ -120,8 +125,22 @@ interface RequestOptions extends RequestInit {
   params?: Record<string, any>;
 }
 
+// Simple request queue spacer: ensures outgoing requests are spaced by at least 150ms
+// to prevent tripping Cloudflare's burst rate limit
+let lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL_MS = 150;
+
+async function throttleRequest(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - lastRequestTime;
+  if (elapsed < MIN_REQUEST_INTERVAL_MS) {
+    await new Promise((r) => setTimeout(r, MIN_REQUEST_INTERVAL_MS - elapsed));
+  }
+  lastRequestTime = Date.now();
+}
+
 export async function request<T = any>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { timeoutMs = 45000, retries = 3, params, ...customConfig } = options;
+  const { timeoutMs = 45000, retries = 1, params, ...customConfig } = options;
 
   let url = `${GATEWAY_URL}${endpoint}`;
   if (params) {
@@ -163,6 +182,8 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
   let attempt = 0;
   while (attempt <= retries) {
     attempt++;
+    await throttleRequest();
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -184,19 +205,18 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
       }
 
       if (!response.ok) {
-        // If 429 Too Many Requests, wait with backoff + jitter and retry
-        if (response.status === 429 && attempt <= retries) {
-          const retryAfter = response.headers.get('Retry-After');
-          const delayMs = retryAfter
-            ? Math.max(1500, parseInt(retryAfter, 10) * 1000)
-            : 1500 * Math.pow(1.8, attempt - 1) + Math.random() * 500;
-          await new Promise((r) => setTimeout(r, Math.min(delayMs, 8000)));
-          continue;
+        // If 429, DO NOT RETRY! Retrying on 429 extends the Cloudflare ban.
+        if (response.status === 429) {
+          throw new ApiError(
+            'Render rate limit reached. Please wait ~1 minute before retrying.',
+            429,
+            responseData
+          );
         }
 
-        // If 502, 503, 504 on Render cold-start, retry up to `retries` times
+        // If 502, 503, 504 on Render cold-start, retry ONCE with backoff
         if ((response.status >= 502 && response.status <= 504) && attempt <= retries) {
-          await new Promise((r) => setTimeout(r, 2000 * attempt));
+          await new Promise((r) => setTimeout(r, 3000 * attempt));
           continue;
         }
 
@@ -211,13 +231,18 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
     } catch (err: any) {
       clearTimeout(timer);
 
+      // If it's already an ApiError (like 429), don't retry, re-throw immediately
+      if (err instanceof ApiError) {
+        throw err;
+      }
+
       const isNetworkOrTimeout =
         err?.name === 'AbortError' ||
         err?.message?.includes('Network request failed') ||
         err?.message?.includes('Failed to fetch');
 
       if (isNetworkOrTimeout && attempt <= retries) {
-        await new Promise((r) => setTimeout(r, 2500 * attempt));
+        await new Promise((r) => setTimeout(r, 3000 * attempt));
         continue;
       }
       throw err;
@@ -226,4 +251,3 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
 
   throw new ApiError('Request timed out after retries. The server might be waking up.', 504);
 }
-
