@@ -16,7 +16,11 @@ import { COLORS } from '../../src/constants/theme';
 import * as trackerApi from '../../src/api/trackerApi';
 import * as profileApi from '../../src/api/profileApi';
 import { extractErrorMessage } from '../../src/api/client';
-import { syncHealthConnect, SyncResult } from '../../src/services/healthConnectSync';
+import {
+  syncHealthConnect,
+  getTodayStepsFromHealthConnect,
+  SyncResult,
+} from '../../src/services/healthConnectSync';
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -29,20 +33,62 @@ export default function DashboardScreen() {
   const [dailyLog, setDailyLog] = useState<trackerApi.DailyLog | null>(null);
   const [bmiData, setBmiData] = useState<profileApi.BmiResponse | null>(null);
 
+  // Steps state
+  const [stepsToday, setStepsToday] = useState<number>(0);
+  const stepsGoal = 10000;
+
   // Health Connect sync state
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+
+  // Helper to extract steps from dailyLog workouts notes (e.g. "source:healthconnect - 7,420 steps")
+  const extractStepsFromLog = (log: trackerApi.DailyLog | null): number => {
+    if (!log?.workouts) return 0;
+    for (const w of log.workouts) {
+      if (w.notes && w.notes.includes('source:healthconnect')) {
+        const match = w.notes.match(/([\d,]+)\s*steps/i);
+        if (match) {
+          const val = parseInt(match[1].replace(/,/g, ''), 10);
+          if (!isNaN(val) && val > 0) return val;
+        }
+      }
+    }
+    return 0;
+  };
 
   const fetchDashboardData = useCallback(async () => {
     setError(null);
     try {
       const today = new Date().toISOString().split('T')[0];
-      const [log, bmi] = await Promise.all([
-        trackerApi.getDailyLog(today).catch(() => null),
-        profileApi.getBmi().catch(() => null),
+
+      // Use allSettled to prevent single-endpoint failure / 429 from breaking entire dashboard
+      const [logRes, bmiRes] = await Promise.allSettled([
+        trackerApi.getDailyLog(today),
+        profileApi.getBmi(),
       ]);
-      setDailyLog(log);
-      setBmiData(bmi);
+
+      if (logRes.status === 'fulfilled') {
+        setDailyLog(logRes.value);
+        const loggedSteps = extractStepsFromLog(logRes.value);
+        if (loggedSteps > 0) {
+          setStepsToday((prev) => Math.max(prev, loggedSteps));
+        }
+      }
+
+      if (bmiRes.status === 'fulfilled') {
+        setBmiData(bmiRes.value);
+      }
+
+      // On Android, also check direct live steps from Health Connect
+      if (Platform.OS === 'android') {
+        getTodayStepsFromHealthConnect()
+          .then((hcSteps) => {
+            if (hcSteps > 0) {
+              setStepsToday((prev) => Math.max(prev, hcSteps));
+            }
+          })
+          .catch(() => {});
+      }
     } catch (err: any) {
       setError(extractErrorMessage(err));
     } finally {
@@ -58,6 +104,9 @@ export default function DashboardScreen() {
     try {
       const result = await syncHealthConnect();
       setSyncResult(result);
+      if (result.success && result.stepsSynced > 0) {
+        setStepsToday(result.stepsSynced);
+      }
       if (result.success) {
         // Refresh dashboard metrics after sync
         fetchDashboardData();
@@ -88,6 +137,11 @@ export default function DashboardScreen() {
     month: 'short',
     day: 'numeric',
   });
+
+  const stepsPercent = Math.min(100, Math.round((stepsToday / stepsGoal) * 100));
+  const estimatedKm = (stepsToday * 0.00076).toFixed(1);
+  const estimatedCaloriesBurned = Math.round(stepsToday * 0.04);
+  const estimatedActiveMins = Math.round(stepsToday / 100);
 
   return (
     <View style={styles.screen}>
@@ -165,6 +219,110 @@ export default function DashboardScreen() {
               </View>
             </View>
 
+            {/* ── Steps Card (Requested) ── */}
+            <View style={styles.stepsCard}>
+              <View style={styles.stepsTop}>
+                <View style={styles.stepsHeaderLeft}>
+                  <Text style={styles.stepsHeaderEmoji}>👟</Text>
+                  <View>
+                    <Text style={styles.stepsLabel}>DAILY STEPS</Text>
+                    <Text style={styles.stepsGoalText}>
+                      Goal: {stepsGoal.toLocaleString()} steps
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.stepsTopRight}>
+                  <View style={styles.stepsPercentPill}>
+                    <Text style={styles.stepsPercentText}>{stepsPercent}%</Text>
+                  </View>
+                  {Platform.OS === 'android' ? (
+                    <TouchableOpacity
+                      style={[styles.stepsSyncBtn, syncing && styles.stepsSyncBtnDisabled]}
+                      onPress={handleSyncNow}
+                      disabled={syncing}
+                      activeOpacity={0.75}
+                    >
+                      {syncing ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.stepsSyncBtnText}>Sync</Text>
+                      )}
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* Step Count Big Display */}
+              <View style={styles.stepsCountRow}>
+                <Text style={styles.stepsBigNumber}>
+                  {stepsToday.toLocaleString()}
+                </Text>
+                <Text style={styles.stepsSubUnit}> / {stepsGoal.toLocaleString()}</Text>
+              </View>
+
+              {/* Progress Bar */}
+              <View style={styles.stepsProgressBarBg}>
+                <View
+                  style={[
+                    styles.stepsProgressBarFill,
+                    { width: `${Math.max(4, stepsPercent)}%` },
+                  ]}
+                />
+              </View>
+
+              {/* Step Sub-metrics Chips */}
+              <View style={styles.stepsChipsRow}>
+                <View style={styles.stepsChip}>
+                  <Text style={styles.stepsChipEmoji}>📍</Text>
+                  <View>
+                    <Text style={styles.stepsChipVal}>{estimatedKm} km</Text>
+                    <Text style={styles.stepsChipSub}>Distance</Text>
+                  </View>
+                </View>
+
+                <View style={styles.stepsChipDivider} />
+
+                <View style={styles.stepsChip}>
+                  <Text style={styles.stepsChipEmoji}>🔥</Text>
+                  <View>
+                    <Text style={styles.stepsChipVal}>{estimatedCaloriesBurned} kcal</Text>
+                    <Text style={styles.stepsChipSub}>Active Burn</Text>
+                  </View>
+                </View>
+
+                <View style={styles.stepsChipDivider} />
+
+                <View style={styles.stepsChip}>
+                  <Text style={styles.stepsChipEmoji}>⏱️</Text>
+                  <View>
+                    <Text style={styles.stepsChipVal}>{estimatedActiveMins} min</Text>
+                    <Text style={styles.stepsChipSub}>Walking</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Sync Feedback Message */}
+              {syncResult ? (
+                <View
+                  style={[
+                    styles.syncResultRow,
+                    { backgroundColor: syncResult.success ? '#dcfce7' : '#fee2e2' },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.syncResultText,
+                      { color: syncResult.success ? '#15803d' : '#dc2626' },
+                    ]}
+                  >
+                    {syncResult.success ? '✓ ' : '✗ '}
+                    {syncResult.message}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
             {/* ── Secondary Metrics (Hydration & Sleep) ── */}
             <View style={styles.metricsRow}>
               <View style={[styles.metricCard, { borderLeftColor: COLORS.info }]}>
@@ -193,52 +351,6 @@ export default function DashboardScreen() {
                 </Text>
               </View>
             </View>
-
-            {/* ── Health Connect Sync Card (embedded, Android only) ── */}
-            {Platform.OS === 'android' ? (
-              <View style={styles.syncCard}>
-                <View style={styles.syncCardTop}>
-                  <View style={styles.syncCardLeft}>
-                    <Text style={styles.syncEmoji}>⌚</Text>
-                    <View>
-                      <Text style={styles.syncTitle}>Health Connect</Text>
-                      <Text style={styles.syncSub}>Sync steps & sleep from your watch</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.syncBtn, syncing && styles.syncBtnDisabled]}
-                    onPress={handleSyncNow}
-                    disabled={syncing}
-                    activeOpacity={0.75}
-                  >
-                    {syncing ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Text style={styles.syncBtnText}>Sync Now</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                {syncResult ? (
-                  <View
-                    style={[
-                      styles.syncResultRow,
-                      { backgroundColor: syncResult.success ? '#dcfce7' : '#fee2e2' },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.syncResultText,
-                        { color: syncResult.success ? '#15803d' : '#dc2626' },
-                      ]}
-                    >
-                      {syncResult.success ? '✓ ' : '✗ '}
-                      {syncResult.message}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
 
             {/* ── BMI & Wellness Guidance ── */}
             {bmiData ? (
@@ -419,6 +531,155 @@ const styles = StyleSheet.create({
     height: 48,
     backgroundColor: COLORS.border,
   },
+
+  // ── Steps Card Styles ──
+  stepsCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  stepsTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  stepsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepsHeaderEmoji: {
+    fontSize: 26,
+  },
+  stepsLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.textMuted,
+    letterSpacing: 0.8,
+  },
+  stepsGoalText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  stepsTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stepsPercentPill: {
+    backgroundColor: '#ecfdf5',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  stepsPercentText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  stepsSyncBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    minWidth: 54,
+    alignItems: 'center',
+  },
+  stepsSyncBtnDisabled: {
+    backgroundColor: '#86efac',
+  },
+  stepsSyncBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  stepsCountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 10,
+  },
+  stepsBigNumber: {
+    fontSize: 34,
+    fontWeight: '900',
+    color: COLORS.text,
+    letterSpacing: -0.5,
+  },
+  stepsSubUnit: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  stepsProgressBarBg: {
+    height: 10,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 5,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  stepsProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#10b981',
+    borderRadius: 5,
+  },
+  stepsChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  stepsChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stepsChipEmoji: {
+    fontSize: 16,
+  },
+  stepsChipVal: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  stepsChipSub: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  stepsChipDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e2e8f0',
+    marginHorizontal: 4,
+  },
+  syncResultRow: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 10,
+  },
+  syncResultText: {
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+
+  // ── Metrics Row ──
   metricsRow: {
     flexDirection: 'row',
     gap: 12,
@@ -465,65 +726,8 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 4,
   },
-  // ── Health Connect Sync Card ──
-  syncCard: {
-    backgroundColor: '#eff6ff',
-    borderWidth: 1.5,
-    borderColor: '#bfdbfe',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  syncCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  syncCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  syncEmoji: {
-    fontSize: 28,
-  },
-  syncTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1e40af',
-  },
-  syncSub: {
-    fontSize: 12,
-    color: '#3b82f6',
-    marginTop: 2,
-  },
-  syncBtn: {
-    backgroundColor: '#1d4ed8',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    minWidth: 80,
-    alignItems: 'center',
-  },
-  syncBtnDisabled: {
-    backgroundColor: '#93c5fd',
-  },
-  syncBtnText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  syncResultRow: {
-    marginTop: 10,
-    padding: 10,
-    borderRadius: 10,
-  },
-  syncResultText: {
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
+
+  // ── BMI Card ──
   bmiCard: {
     backgroundColor: COLORS.card,
     borderRadius: 16,

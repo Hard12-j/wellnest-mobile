@@ -14,6 +14,39 @@ export interface SyncResult {
   message: string;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Reads today's step count directly from Health Connect (if available and permissions granted).
+ * Non-destructive: does not post to backend.
+ */
+export const getTodayStepsFromHealthConnect = async (): Promise<number> => {
+  try {
+    const sdkStatus = await getSdkStatus();
+    if (sdkStatus === SdkAvailabilityStatus.SDK_UNAVAILABLE) {
+      return 0;
+    }
+
+    const isInitialized = await initialize();
+    if (!isInitialized) return 0;
+
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+
+    const stepsResult = await readRecords('Steps', {
+      timeRangeFilter: {
+        operator: 'between',
+        startTime: startOfDay.toISOString(),
+        endTime: now.toISOString(),
+      },
+    });
+
+    return stepsResult.records.reduce((sum, r) => sum + (r.count || 0), 0);
+  } catch {
+    return 0;
+  }
+};
+
 export const syncHealthConnect = async (): Promise<SyncResult> => {
   // 1. Check SDK availability
   const sdkStatus = await getSdkStatus();
@@ -74,31 +107,37 @@ export const syncHealthConnect = async (): Promise<SyncResult> => {
       totalSteps = stepsResult.records.reduce((sum, r) => sum + (r.count || 0), 0);
 
       if (totalSteps > 0) {
-        // Idempotency: check if already synced today
+        // Fetch existing workouts for today to check if steps already synced
         const existingWorkouts = await trackerApi.listWorkouts({ from: todayStr, to: todayStr });
         const alreadySynced = existingWorkouts.content?.find(
           (w) => w.notes?.includes('source:healthconnect')
         );
 
-        if (!alreadySynced) {
-          // 100 steps ~ 1 min walking, 1 step ~ 0.04 kcal
-          const duration = Math.max(1, Math.round(totalSteps / 100));
-          const calories = Math.max(1, Math.round(totalSteps * 0.04));
+        // 100 steps ~ 1 min walking, 1 step ~ 0.04 kcal
+        const duration = Math.max(1, Math.round(totalSteps / 100));
+        const calories = Math.max(1, Math.round(totalSteps * 0.04));
 
-          await trackerApi.createWorkout({
-            date: todayStr,
-            type: 'WALKING',
-            durationMin: duration,
-            intensity: 'MODERATE',
-            caloriesBurned: calories,
-            notes: `source:healthconnect - ${totalSteps.toLocaleString()} steps`,
-          });
+        if (alreadySynced && alreadySynced.id) {
+          // If already synced, delete old entry so we can write the updated step count
+          await trackerApi.deleteWorkout(alreadySynced.id);
+          await sleep(200);
         }
+
+        await trackerApi.createWorkout({
+          date: todayStr,
+          type: 'WALKING',
+          durationMin: duration,
+          intensity: 'MODERATE',
+          caloriesBurned: calories,
+          notes: `source:healthconnect - ${totalSteps.toLocaleString()} steps`,
+        });
       }
     } catch (err: any) {
       console.warn('Steps sync error:', err?.message);
     }
   }
+
+  await sleep(250);
 
   // ── B. Read Sleep ──
   if (hasSleepPerm) {
@@ -147,4 +186,3 @@ export const syncHealthConnect = async (): Promise<SyncResult> => {
     message: `Sync successful! ${totalSteps.toLocaleString()} steps and ${totalSleepHours} hrs sleep synced.`,
   };
 };
-

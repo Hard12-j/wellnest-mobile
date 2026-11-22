@@ -121,7 +121,7 @@ interface RequestOptions extends RequestInit {
 }
 
 export async function request<T = any>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { timeoutMs = 45000, retries = 2, params, ...customConfig } = options;
+  const { timeoutMs = 45000, retries = 3, params, ...customConfig } = options;
 
   let url = `${GATEWAY_URL}${endpoint}`;
   if (params) {
@@ -184,11 +184,22 @@ export async function request<T = any>(endpoint: string, options: RequestOptions
       }
 
       if (!response.ok) {
-        // If 502, 503, 504 or network timeout on Render cold-start, retry up to `retries` times
+        // If 429 Too Many Requests, wait with backoff + jitter and retry
+        if (response.status === 429 && attempt <= retries) {
+          const retryAfter = response.headers.get('Retry-After');
+          const delayMs = retryAfter
+            ? Math.max(1500, parseInt(retryAfter, 10) * 1000)
+            : 1500 * Math.pow(1.8, attempt - 1) + Math.random() * 500;
+          await new Promise((r) => setTimeout(r, Math.min(delayMs, 8000)));
+          continue;
+        }
+
+        // If 502, 503, 504 on Render cold-start, retry up to `retries` times
         if ((response.status >= 502 && response.status <= 504) && attempt <= retries) {
           await new Promise((r) => setTimeout(r, 2000 * attempt));
           continue;
         }
+
         throw new ApiError(
           responseData?.message || `Request failed with status ${response.status}`,
           response.status,
