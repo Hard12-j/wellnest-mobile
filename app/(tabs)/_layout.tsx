@@ -28,45 +28,35 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>🏠</Text>
-          ),
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏠</Text>,
         }}
       />
       <Tabs.Screen
         name="tracker"
         options={{
           title: 'Tracker',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>🔥</Text>
-          ),
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🔥</Text>,
         }}
       />
       <Tabs.Screen
         name="analytics"
         options={{
           title: 'Analytics',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>📊</Text>
-          ),
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>📊</Text>,
         }}
       />
       <Tabs.Screen
-        name="sync"
+        name="community"
         options={{
-          title: 'Sync',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>⌚</Text>
-          ),
+          title: 'Community',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>👥</Text>,
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="trainers"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20 }}>👤</Text>
-          ),
+          title: 'Trainers',
+          tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏋️</Text>,
         }}
       />
     </Tabs>

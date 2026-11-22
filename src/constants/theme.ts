@@ -34,3 +34,4 @@ export const FONTS = {
   medium: 'System',
   bold: 'System',
 };
+

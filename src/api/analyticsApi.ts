@@ -90,3 +90,4 @@ export const getGoalCards = async (): Promise<GoalCardProgressResponse> => {
     method: 'GET',
   });
 };
+

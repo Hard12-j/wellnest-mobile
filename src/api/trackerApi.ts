@@ -205,3 +205,4 @@ export const createSleep = async (data: {
 export const deleteSleep = async (id: number): Promise<void> => {
   await request(`/api/tracker/sleep/${id}`, { method: 'DELETE' });
 };
+

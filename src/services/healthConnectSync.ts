@@ -147,3 +147,4 @@ export const syncHealthConnect = async (): Promise<SyncResult> => {
     message: `Sync successful! ${totalSteps.toLocaleString()} steps and ${totalSleepHours} hrs sleep synced.`,
   };
 };
+

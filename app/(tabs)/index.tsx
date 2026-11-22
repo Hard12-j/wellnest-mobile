@@ -7,6 +7,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
@@ -15,6 +16,7 @@ import { COLORS } from '../../src/constants/theme';
 import * as trackerApi from '../../src/api/trackerApi';
 import * as profileApi from '../../src/api/profileApi';
 import { extractErrorMessage } from '../../src/api/client';
+import { syncHealthConnect, SyncResult } from '../../src/services/healthConnectSync';
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -26,6 +28,10 @@ export default function DashboardScreen() {
 
   const [dailyLog, setDailyLog] = useState<trackerApi.DailyLog | null>(null);
   const [bmiData, setBmiData] = useState<profileApi.BmiResponse | null>(null);
+
+  // Health Connect sync state
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
   const fetchDashboardData = useCallback(async () => {
     setError(null);
@@ -44,6 +50,29 @@ export default function DashboardScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  const handleSyncNow = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await syncHealthConnect();
+      setSyncResult(result);
+      if (result.success) {
+        // Refresh dashboard metrics after sync
+        fetchDashboardData();
+      }
+    } catch (err: any) {
+      setSyncResult({
+        success: false,
+        stepsSynced: 0,
+        sleepHoursSynced: 0,
+        message: extractErrorMessage(err) || 'Sync failed. Please try again.',
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     fetchDashboardData();
@@ -66,9 +95,10 @@ export default function DashboardScreen() {
         title={`Hello, ${user?.first || 'Friend'} 👋`}
         subtitle={todayStr}
         rightAction={
+          // Avatar → standalone /profile page (not a tab)
           <TouchableOpacity
             style={styles.avatarPill}
-            onPress={() => router.push('/(tabs)/profile')}
+            onPress={() => router.push('/profile')}
           >
             <Text style={styles.avatarText}>
               {(user?.first?.[0] || 'U').toUpperCase()}
@@ -164,23 +194,51 @@ export default function DashboardScreen() {
               </View>
             </View>
 
-            {/* ── Health Connect Quick Sync Banner ── */}
-            <TouchableOpacity
-              style={styles.syncBanner}
-              onPress={() => router.push('/(tabs)/sync')}
-              activeOpacity={0.85}
-            >
-              <View style={styles.syncBannerLeft}>
-                <Text style={styles.syncEmoji}>⌚</Text>
-                <View>
-                  <Text style={styles.syncTitle}>Health Connect Integration</Text>
-                  <Text style={styles.syncSub}>
-                    Read steps and sleep from your phone or watch
-                  </Text>
+            {/* ── Health Connect Sync Card (embedded, Android only) ── */}
+            {Platform.OS === 'android' ? (
+              <View style={styles.syncCard}>
+                <View style={styles.syncCardTop}>
+                  <View style={styles.syncCardLeft}>
+                    <Text style={styles.syncEmoji}>⌚</Text>
+                    <View>
+                      <Text style={styles.syncTitle}>Health Connect</Text>
+                      <Text style={styles.syncSub}>Sync steps & sleep from your watch</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.syncBtn, syncing && styles.syncBtnDisabled]}
+                    onPress={handleSyncNow}
+                    disabled={syncing}
+                    activeOpacity={0.75}
+                  >
+                    {syncing ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.syncBtnText}>Sync Now</Text>
+                    )}
+                  </TouchableOpacity>
                 </View>
+
+                {syncResult ? (
+                  <View
+                    style={[
+                      styles.syncResultRow,
+                      { backgroundColor: syncResult.success ? '#dcfce7' : '#fee2e2' },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.syncResultText,
+                        { color: syncResult.success ? '#15803d' : '#dc2626' },
+                      ]}
+                    >
+                      {syncResult.success ? '✓ ' : '✗ '}
+                      {syncResult.message}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
-              <Text style={styles.syncArrow}>→</Text>
-            </TouchableOpacity>
+            ) : null}
 
             {/* ── BMI & Wellness Guidance ── */}
             {bmiData ? (
@@ -407,18 +465,21 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 4,
   },
-  syncBanner: {
+  // ── Health Connect Sync Card ──
+  syncCard: {
     backgroundColor: '#eff6ff',
     borderWidth: 1.5,
     borderColor: '#bfdbfe',
     borderRadius: 16,
     padding: 16,
+    marginBottom: 16,
+  },
+  syncCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  syncBannerLeft: {
+  syncCardLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -437,11 +498,31 @@ const styles = StyleSheet.create({
     color: '#3b82f6',
     marginTop: 2,
   },
-  syncArrow: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#1e40af',
-    marginLeft: 8,
+  syncBtn: {
+    backgroundColor: '#1d4ed8',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  syncBtnDisabled: {
+    backgroundColor: '#93c5fd',
+  },
+  syncBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  syncResultRow: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+  },
+  syncResultText: {
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   bmiCard: {
     backgroundColor: COLORS.card,

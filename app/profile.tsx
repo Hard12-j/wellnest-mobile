@@ -9,13 +9,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Header } from '../../src/components/Header';
-import { Input } from '../../src/components/Input';
-import { Button } from '../../src/components/Button';
-import { COLORS } from '../../src/constants/theme';
-import { useAuth } from '../../src/context/AuthContext';
-import * as profileApi from '../../src/api/profileApi';
-import { GATEWAY_URL, extractErrorMessage } from '../../src/api/client';
+import { Input } from '../src/components/Input';
+import { Button } from '../src/components/Button';
+import { COLORS } from '../src/constants/theme';
+import { useAuth } from '../src/context/AuthContext';
+import * as profileApi from '../src/api/profileApi';
+import { GATEWAY_URL, extractErrorMessage } from '../src/api/client';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -102,7 +101,14 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.screen}>
-      <Header title="My Profile" subtitle="Fitness metrics & account settings" />
+      {/* ── Top Bar with Back Navigation ── */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>My Profile</Text>
+        <View style={{ width: 48 }} />
+      </View>
 
       <ScrollView contentContainerStyle={styles.container}>
         {/* ── User Overview Card ── */}
@@ -282,9 +288,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bg,
   },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingBottom: 12,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  backBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  backBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  screenTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
   container: {
     padding: 16,
-    paddingTop: 8,
     paddingBottom: 32,
   },
   centerLoading: {
@@ -538,3 +568,4 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+

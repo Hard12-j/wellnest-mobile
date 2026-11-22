@@ -44,3 +44,4 @@ export const updateProfile = async (data: {
 export const getBmi = async (): Promise<BmiResponse> => {
   return request<BmiResponse>('/api/profile/bmi', { method: 'GET' });
 };
+
