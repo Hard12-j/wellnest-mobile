@@ -50,9 +50,14 @@ export interface GoalProgressResponse {
 
 export interface InsightItem {
   id?: string;
-  title: string;
-  description: string;
-  type: 'INFO' | 'WARNING' | 'SUCCESS' | 'ALERT';
+  code?: string;
+  title?: string;
+  description?: string;
+  message?: string;
+  type?: 'INFO' | 'WARNING' | 'SUCCESS' | 'ALERT';
+  severity?: 'INFO' | 'WARNING' | string;
+  matchedDays?: number;
+  windowDays?: number;
 }
 
 export interface InsightsResponse {
@@ -129,3 +134,17 @@ export const getGoalCards = async (): Promise<GoalCardProgressResponse> => {
     method: 'GET',
   });
 };
+
+export const getClientWeeklyTrends = async (clientId: number, from?: string, to?: string): Promise<WeeklyTrendsResponse> =>
+  request<WeeklyTrendsResponse>(`/api/analytics/clients/${clientId}/weekly-trends`, {
+    method: 'GET', params: { from, to },
+  });
+
+export const getClientGoalProgress = async (clientId: number): Promise<GoalProgressResponse> =>
+  request<GoalProgressResponse>(`/api/analytics/clients/${clientId}/goal-progress`, { method: 'GET' });
+
+export const getClientInsights = async (clientId: number): Promise<InsightsResponse> =>
+  request<InsightsResponse>(`/api/analytics/clients/${clientId}/insights`, { method: 'GET' });
+
+export const getClientGoalCards = async (clientId: number): Promise<GoalCardProgressResponse> =>
+  request<GoalCardProgressResponse>(`/api/analytics/clients/${clientId}/goal-cards`, { method: 'GET' });

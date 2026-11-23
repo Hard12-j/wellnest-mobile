@@ -287,6 +287,11 @@ export default function TrainersScreen() {
                           <Text style={styles.trainerMeta}>
                             📍 {t.location || 'Online / Global'} • {t.experienceYears || 3}+ yrs
                           </Text>
+                          <Text style={styles.trainerPrice}>
+                            {t.monthlyFee != null
+                              ? `₹${Number(t.monthlyFee).toLocaleString('en-IN')} / month`
+                              : 'Price not listed'}
+                          </Text>
                         </View>
                       </View>
 
@@ -478,6 +483,17 @@ export default function TrainersScreen() {
             <Text style={styles.modalDesc}>
               Tell your coach what your target weight, fitness goals, and availability look like:
             </Text>
+
+            {selectedTrainer ? (
+              <View style={styles.selectedTrainerPrice}>
+                <Text style={styles.selectedTrainerPriceLabel}>COACHING PRICE</Text>
+                <Text style={styles.selectedTrainerPriceValue}>
+                  {selectedTrainer.monthlyFee != null
+                    ? `₹${Number(selectedTrainer.monthlyFee).toLocaleString('en-IN')} / month`
+                    : 'Price not listed'}
+                </Text>
+              </View>
+            ) : null}
 
             <Input
               label="Your Wellness & Fitness Goals"
@@ -710,6 +726,30 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.textMuted,
     marginTop: 3,
+  },
+  trainerPrice: {
+    color: COLORS.primaryDark,
+    fontSize: 13,
+    fontWeight: '900',
+    marginTop: 8,
+  },
+  selectedTrainerPrice: {
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  selectedTrainerPriceLabel: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginBottom: 4,
+  },
+  selectedTrainerPriceValue: {
+    color: COLORS.primaryDark,
+    fontSize: 16,
+    fontWeight: '900',
   },
   trainerCardBottom: {
     marginTop: 12,

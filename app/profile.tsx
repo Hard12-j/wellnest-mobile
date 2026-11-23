@@ -14,7 +14,28 @@ import { Button } from '../src/components/Button';
 import { COLORS } from '../src/constants/theme';
 import { useAuth } from '../src/context/AuthContext';
 import * as profileApi from '../src/api/profileApi';
-import { GATEWAY_URL, extractErrorMessage } from '../src/api/client';
+import * as trainerApi from '../src/api/trainerApi';
+import {
+  DEFAULT_TRAINER_AVAILABILITY,
+  normalizeTrainerAvailability,
+  TrainerAvailabilityPicker,
+} from '../src/components/TrainerAvailabilityPicker';
+import {
+  clearTrainerMonthlyFeeDraft,
+  extractErrorMessage,
+  GATEWAY_URL,
+  getTrainerMonthlyFeeDraft,
+} from '../src/api/client';
+
+const SPECIALIZATION_SUGGESTIONS = [
+  'Strength & Conditioning',
+  'Weight Loss & Transformation',
+  'CrossFit & Functional Fitness',
+  'Bodybuilding & Hypertrophy',
+  'Yoga, Mobility & Mindfulness',
+  'HIIT & Athletic Performance',
+  'Nutrition & Diet Coaching',
+];
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -34,6 +55,20 @@ export default function ProfileScreen() {
   const [weightKg, setWeightKg] = useState('');
   const [targetWeightKg, setTargetWeightKg] = useState('');
   const [fitnessGoal, setFitnessGoal] = useState('WEIGHT_LOSS');
+  const [trainerProfile, setTrainerProfile] = useState<trainerApi.TrainerProfile | null>(null);
+  const [trainerForm, setTrainerForm] = useState({
+    first: '',
+    last: '',
+    specialization: '',
+    location: '',
+    experienceYears: '',
+    contactNo: '',
+    availability: '',
+    monthlyFee: '',
+  });
+  const [savingTrainerProfile, setSavingTrainerProfile] = useState(false);
+  const [trainerProfileLoaded, setTrainerProfileLoaded] = useState(false);
+  const isTrainer = user?.role === 'TRAINER';
 
   const loadProfile = useCallback(async () => {
     setError(null);
@@ -62,6 +97,30 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  useEffect(() => {
+    if (!isTrainer) return;
+    let active = true;
+    Promise.all([
+      trainerApi.getMyTrainerProfile().catch(() => null),
+      getTrainerMonthlyFeeDraft(),
+    ]).then(([trainerData, feeDraft]) => {
+      if (!active) return;
+      setTrainerProfile(trainerData);
+      setTrainerForm({
+        first: trainerData?.first || user?.first || '',
+        last: trainerData?.last || user?.last || '',
+        specialization: trainerData?.specialization || '',
+        location: trainerData?.location || '',
+        experienceYears: trainerData?.experienceYears != null ? String(trainerData.experienceYears) : '',
+        contactNo: trainerData?.contactNo || '',
+        availability: normalizeTrainerAvailability(trainerData?.availability) || DEFAULT_TRAINER_AVAILABILITY,
+        monthlyFee: trainerData?.monthlyFee != null ? String(trainerData.monthlyFee) : (feeDraft || ''),
+      });
+      setTrainerProfileLoaded(true);
+    });
+    return () => { active = false; };
+  }, [isTrainer, user?.first, user?.last]);
 
   const handleSaveProfile = async () => {
     setSaving(true);
@@ -97,6 +156,56 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handleTrainerFieldChange = (field: keyof typeof trainerForm, value: string) => {
+    setTrainerForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSaveTrainerProfile = async () => {
+    const fee = Number(trainerForm.monthlyFee);
+    const experience = trainerForm.experienceYears ? Number(trainerForm.experienceYears) : null;
+    if (!trainerForm.first.trim() || !trainerForm.last.trim() || !trainerForm.specialization.trim()) {
+      Alert.alert('Complete your profile', 'First name, last name, and specialization are required.');
+      return;
+    }
+    if (!trainerForm.monthlyFee.trim() || !Number.isFinite(fee) || fee <= 0) {
+      Alert.alert('Check monthly fee', 'Enter a monthly coaching fee greater than zero.');
+      return;
+    }
+    if (experience != null && (!Number.isInteger(experience) || experience < 0 || experience > 60)) {
+      Alert.alert('Check experience', 'Experience must be between 0 and 60 years.');
+      return;
+    }
+    if (trainerForm.contactNo.length > 20) {
+      Alert.alert('Check contact number', 'Contact number cannot exceed 20 characters.');
+      return;
+    }
+
+    setSavingTrainerProfile(true);
+    try {
+      const updated = await trainerApi.updateMyTrainerProfile({
+        first: trainerForm.first.trim(),
+        last: trainerForm.last.trim(),
+        specialization: trainerForm.specialization.trim(),
+        location: trainerForm.location.trim() || null,
+        experienceYears: experience,
+        contactNo: trainerForm.contactNo.trim() || null,
+        availability: trainerForm.availability.trim() || null,
+        monthlyFee: fee,
+      });
+      setTrainerProfile(updated);
+      setTrainerForm((current) => ({
+        ...current,
+        monthlyFee: String(updated.monthlyFee ?? fee),
+      }));
+      await clearTrainerMonthlyFeeDraft();
+      Alert.alert('Profile saved', 'Your trainer profile and monthly price are now shown to users.');
+    } catch (err: any) {
+      Alert.alert('Could not save price', extractErrorMessage(err));
+    } finally {
+      setSavingTrainerProfile(false);
+    }
   };
 
   return (
@@ -150,6 +259,105 @@ export default function ProfileScreen() {
             ) : null}
 
             {/* ── BMI Guidance Card ── */}
+            {isTrainer ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Trainer Profile & Pricing</Text>
+                <Text style={styles.trainerFeeHelp}>
+                  Complete these details so users can learn about your coaching and monthly price.
+                </Text>
+                <View style={styles.inputRow}>
+                  <Input
+                    label="First Name *"
+                    placeholder="First name"
+                    value={trainerForm.first}
+                    onChangeText={(value) => handleTrainerFieldChange('first', value)}
+                    containerStyle={styles.halfInput}
+                  />
+                  <Input
+                    label="Last Name *"
+                    placeholder="Last name"
+                    value={trainerForm.last}
+                    onChangeText={(value) => handleTrainerFieldChange('last', value)}
+                    containerStyle={styles.halfInput}
+                  />
+                </View>
+                <Input
+                  label="Specialization / Coaching Focus *"
+                  placeholder="e.g. Strength & Conditioning"
+                  value={trainerForm.specialization}
+                  onChangeText={(value) => handleTrainerFieldChange('specialization', value)}
+                />
+                <Text style={styles.suggestionLabel}>Suggestions</Text>
+                <View style={styles.suggestionWrap}>
+                  {SPECIALIZATION_SUGGESTIONS.map((suggestion) => {
+                    const selected = trainerForm.specialization === suggestion;
+                    return (
+                      <TouchableOpacity
+                        key={suggestion}
+                        onPress={() => handleTrainerFieldChange('specialization', suggestion)}
+                        style={[styles.suggestionChip, selected && styles.suggestionChipActive]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                      >
+                        <Text style={[styles.suggestionText, selected && styles.suggestionTextActive]}>
+                          {suggestion}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={styles.inputRow}>
+                  <Input
+                    label="Experience (Years)"
+                    placeholder="e.g. 5"
+                    value={trainerForm.experienceYears}
+                    onChangeText={(value) => handleTrainerFieldChange('experienceYears', value)}
+                    keyboardType="number-pad"
+                    containerStyle={styles.halfInput}
+                  />
+                  <Input
+                    label="Location / City / Studio"
+                    placeholder="e.g. Mumbai"
+                    value={trainerForm.location}
+                    onChangeText={(value) => handleTrainerFieldChange('location', value)}
+                    containerStyle={styles.halfInput}
+                  />
+                </View>
+                <Input
+                  label="Contact Number"
+                  placeholder="e.g. +91 98765 43210"
+                  value={trainerForm.contactNo}
+                  onChangeText={(value) => handleTrainerFieldChange('contactNo', value)}
+                  keyboardType="phone-pad"
+                />
+                {trainerProfileLoaded ? (
+                  <TrainerAvailabilityPicker
+                    key={trainerProfile?.userId ?? 'new-trainer-profile'}
+                    value={trainerForm.availability}
+                    onChange={(value) => handleTrainerFieldChange('availability', value)}
+                  />
+                ) : null}
+                <Input
+                  label="Monthly Coaching Fee (INR per month)"
+                  placeholder="e.g. 500"
+                  value={trainerForm.monthlyFee}
+                  onChangeText={(value) => handleTrainerFieldChange('monthlyFee', value)}
+                  keyboardType="decimal-pad"
+                />
+                <Button
+                  title="Save Trainer Profile"
+                  onPress={handleSaveTrainerProfile}
+                  loading={savingTrainerProfile}
+                  style={styles.saveBtn}
+                />
+                {trainerProfile?.monthlyFee != null ? (
+                  <Text style={styles.savedTrainerFee}>
+                    Current price: ₹{Number(trainerProfile.monthlyFee).toLocaleString('en-IN')} / month
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
             {bmi ? (
               <View style={styles.bmiCard}>
                 <View style={styles.bmiTop}>
@@ -413,6 +621,53 @@ const styles = StyleSheet.create({
   },
   textYellow: {
     color: '#b45309',
+  },
+  trainerFeeHelp: {
+    color: COLORS.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  suggestionLabel: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: -8,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  suggestionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginBottom: 12,
+  },
+  suggestionChip: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  suggestionChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  suggestionText: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  suggestionTextActive: {
+    color: '#ffffff',
+  },
+  savedTrainerFee: {
+    color: COLORS.primaryDark,
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 12,
   },
   bmiCard: {
     backgroundColor: COLORS.card,

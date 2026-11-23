@@ -5,6 +5,8 @@ export const GATEWAY_URL =
 
 const TOKEN_KEY = 'wellnest_access_token';
 const USER_KEY = 'wellnest_user';
+const TRAINER_MONTHLY_FEE_DRAFT_KEY = 'wellnest_trainer_monthly_fee_draft';
+const LEGACY_TRAINER_SESSION_FEE_DRAFT_KEY = 'wellnest_trainer_session_fee_draft';
 
 let inMemoryToken: string | null = null;
 let inMemoryUserId: number | null = null;
@@ -53,6 +55,27 @@ export const getStoredUser = async (): Promise<any | null> => {
   } catch {
     return null;
   }
+};
+
+export const setTrainerMonthlyFeeDraft = async (fee: string) => {
+  await SecureStore.setItemAsync(TRAINER_MONTHLY_FEE_DRAFT_KEY, fee);
+  await SecureStore.deleteItemAsync(LEGACY_TRAINER_SESSION_FEE_DRAFT_KEY);
+};
+
+export const getTrainerMonthlyFeeDraft = async (): Promise<string | null> => {
+  try {
+    return (await SecureStore.getItemAsync(TRAINER_MONTHLY_FEE_DRAFT_KEY))
+      || (await SecureStore.getItemAsync(LEGACY_TRAINER_SESSION_FEE_DRAFT_KEY));
+  } catch {
+    return null;
+  }
+};
+
+export const clearTrainerMonthlyFeeDraft = async () => {
+  await Promise.all([
+    SecureStore.deleteItemAsync(TRAINER_MONTHLY_FEE_DRAFT_KEY),
+    SecureStore.deleteItemAsync(LEGACY_TRAINER_SESSION_FEE_DRAFT_KEY),
+  ]);
 };
 
 export const clearStoredAuth = async () => {

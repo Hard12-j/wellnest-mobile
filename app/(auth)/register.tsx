@@ -14,7 +14,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { Input } from '../../src/components/Input';
 import { Button } from '../../src/components/Button';
 import { COLORS } from '../../src/constants/theme';
-import { extractErrorMessage } from '../../src/api/client';
+import { extractErrorMessage, setTrainerMonthlyFeeDraft } from '../../src/api/client';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -26,6 +26,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<'USER' | 'TRAINER'>('USER');
+  const [monthlyFee, setMonthlyFee] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,10 +44,15 @@ export default function RegisterScreen() {
       setError('Password must be at least 6 characters long.');
       return;
     }
+    if (role === 'TRAINER' && (!monthlyFee.trim() || !Number.isFinite(Number(monthlyFee)) || Number(monthlyFee) <= 0)) {
+      setError('Enter a monthly trainer fee greater than zero.');
+      return;
+    }
 
     setError(null);
     setLoading(true);
     try {
+      if (role === 'TRAINER') await setTrainerMonthlyFeeDraft(monthlyFee.trim());
       const res = await register({
         first: first.trim(),
         last: last.trim(),
@@ -55,7 +61,6 @@ export default function RegisterScreen() {
         confirmPassword,
         role,
       });
-
       Alert.alert(
         'Registration Successful! 🎉',
         res.message || 'Please enter the verification code sent to your email.',
@@ -118,6 +123,17 @@ export default function RegisterScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {role === 'TRAINER' ? (
+            <Input
+              label="Monthly Coaching Fee (INR per month)"
+              placeholder="e.g. 500"
+              value={monthlyFee}
+              onChangeText={(value) => { setMonthlyFee(value); setError(null); }}
+              keyboardType="decimal-pad"
+              autoCapitalize="none"
+            />
+          ) : null}
 
           <View style={styles.nameRow}>
             <Input

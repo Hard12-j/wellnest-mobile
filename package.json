@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@stomp/stompjs": "^7.5.0",
     "expo": "~58.0.26",
     "expo-build-properties": "~58.0.12",
     "expo-constants": "~58.0.16",
@@ -20,13 +21,16 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "lint": "expo lint"
   },
   "private": true
 }
